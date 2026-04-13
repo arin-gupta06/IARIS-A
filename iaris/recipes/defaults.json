@@ -1,0 +1,50 @@
+{
+  "name": "defaults",
+  "recipes": [
+    {
+      "name": "web_server",
+      "patterns": ["nginx", "apache", "httpd", "uvicorn", "gunicorn"],
+      "behavior_type": "latency_sensitive",
+      "avg_cpu": 15.0,
+      "avg_memory": 5.0,
+      "criticality": 0.8,
+      "description": "Web servers are latency-sensitive — protect response times"
+    },
+    {
+      "name": "database",
+      "patterns": ["postgres", "mysqld", "mongod", "redis-server"],
+      "behavior_type": "latency_sensitive",
+      "avg_cpu": 20.0,
+      "avg_memory": 10.0,
+      "criticality": 0.9,
+      "description": "Databases are critical infrastructure — high priority"
+    },
+    {
+      "name": "compiler",
+      "patterns": ["gcc", "g++", "clang", "rustc", "javac", "tsc"],
+      "behavior_type": "cpu_hog",
+      "avg_cpu": 80.0,
+      "avg_memory": 5.0,
+      "criticality": 0.4,
+      "description": "Compilers are batch CPU-heavy — can be throttled under pressure"
+    },
+    {
+      "name": "backup",
+      "patterns": ["rsync", "tar", "zip", "7z", "backup"],
+      "behavior_type": "blocking",
+      "avg_cpu": 10.0,
+      "avg_memory": 3.0,
+      "criticality": 0.2,
+      "description": "Backup processes are I/O-heavy and deferrable"
+    },
+    {
+      "name": "browser",
+      "patterns": ["chrome", "firefox", "msedge", "brave", "opera"],
+      "behavior_type": "bursty",
+      "avg_cpu": 25.0,
+      "avg_memory": 15.0,
+      "criticality": 0.6,
+      "description": "Browsers show bursty CPU with high memory — moderate priority"
+    }
+  ]
+}

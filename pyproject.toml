@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "iaris"
+version = "1.0.0"
+description = "Intent-Aware Adaptive Resource Intelligence System"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "psutil>=5.9.0",
+    "fastapi>=0.100.0",
+    "uvicorn[standard]>=0.23.0",
+    "websockets>=12.0",
+    "rich>=13.0.0",
+    "textual>=0.50.0",
+    "typer>=0.9.0",
+    "aiosqlite>=0.19.0",
+    "pydantic>=2.0.0",
+]
+
+[project.scripts]
+iaris = "iaris.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["iaris*"]
