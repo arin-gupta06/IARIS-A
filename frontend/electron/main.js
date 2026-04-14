@@ -10,6 +10,7 @@
 
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path  = require('path');
+const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const http  = require('http');
 
@@ -103,9 +104,19 @@ function pollBackend(onReady, onTimeout) {
 // ─── Windows ──────────────────────────────────────────────────────────────────
 
 function createLoadingWindow() {
+  const logoPath = path.join(PROJECT_ROOT, 'frontend', 'src', 'assets', 'IARIS_logo1.png');
+  let logoDataUri = '';
+
+  try {
+    const logoBase64 = fs.readFileSync(logoPath).toString('base64');
+    logoDataUri = `data:image/png;base64,${logoBase64}`;
+  } catch (err) {
+    console.warn('[IARIS] Splash logo missing or unreadable:', err.message);
+  }
+
   loadingWin = new BrowserWindow({
-    width:  500,
-    height: 300,
+    width:  520,
+    height: 360,
     frame:  false,
     transparent: true,
     resizable:   false,
@@ -129,26 +140,19 @@ function createLoadingWindow() {
         border-radius: 12px;
         border: 1px solid rgba(0, 212, 255, 0.3);
       }
-      .logo { font-size: 40px; margin-bottom: 16px; }
-      h1 { font-size: 22px; font-weight: 700; color: #00d4ff; letter-spacing: 2px; }
-      p  { font-size: 13px; color: #8b949e; margin-top: 8px; }
-      .dot {
-        width: 8px; height: 8px; border-radius: 50%;
-        background: #00d4ff;
-        margin-top: 24px;
-        animation: pulse 1.2s ease-in-out infinite;
+      .logo {
+        width: 164px;
+        height: 164px;
+        object-fit: contain;
+        margin-bottom: 14px;
+        filter: drop-shadow(0 8px 24px rgba(0, 212, 255, 0.18));
       }
-      @keyframes pulse {
-        0%, 100% { opacity: 0.3; transform: scale(0.8); }
-        50%       { opacity: 1;   transform: scale(1.2); }
-      }
+      p  { font-size: 22px; color: #8b949e; margin-top: 2px; }
     </style>
     </head>
     <body>
-      <div class="logo">⚙</div>
-      <h1>IARIS</h1>
-      <p>Starting intelligence engine…</p>
-      <div class="dot"></div>
+      ${logoDataUri ? `<img class="logo" src="${logoDataUri}" alt="IARIS logo" />` : ''}
+      <p>Starting the intelgence engine...</p>
     </body>
     </html>
   `)}`);

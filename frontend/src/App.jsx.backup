@@ -34,13 +34,7 @@ import {
   ResponsiveContainer,
   AreaChart,
   Area,
-  ReferenceLine,
-  BarChart,
-  Bar,
-  ScatterChart,
-  Scatter,
-  ZAxis,
-  Legend
+  ReferenceLine
 } from 'recharts';
 import './index.css';
 
@@ -137,258 +131,96 @@ function SimButton({ icon, label, onClick, variant = '', dangerStyle = false }) 
 const KNOWLEDGE_ENTRIES = [
   {
     title: 'What is Throttling?',
-    category: 'Control Policy',
-    confidence: 'High',
     what: 'Throttling reduces the CPU time slice allocated to a process, slowing it down.',
     why: 'When a CPU hog consumes excessive resources, it starves latency-sensitive processes.',
     how: 'IARIS automatically throttles low-priority processes when system state enters PRESSURE or CRITICAL.',
-    evidence: [
-      'Throttle tendency rises when CPU pressure increases above operational comfort bands.',
-      'Recent engine decisions show throttle events mapped to overloaded processes.',
-    ],
-    operatorCheck: 'If latency drops after throttling while system stability improves, the policy is working as intended.',
-    trustNote: 'Policy is grounded in live process telemetry and deterministic score thresholds.',
   },
   {
     title: 'What is EWMA?',
-    category: 'Modeling',
-    confidence: 'High',
     what: 'Exponential Weighted Moving Average — a smoothing algorithm that learns process behavior over time.',
     why: 'Raw CPU samples are noisy. EWMA gives recent samples more weight while retaining historical context.',
     how: 'IARIS uses EWMA with α=0.3 (warmup) → α=0.1 (steady) to converge process profiles in 30–90 seconds.',
-    evidence: [
-      'EWMA dampens short spikes while preserving sustained behavioral trends.',
-      'Classification confidence rises as the number of observations grows.',
-    ],
-    operatorCheck: 'Watch for reduced metric volatility over consecutive updates as profiles stabilize.',
-    trustNote: 'Method is a standard statistical smoother commonly used in production monitoring systems.',
   },
   {
     title: 'What is a CPU Hog?',
-    category: 'Classification',
-    confidence: 'Medium',
     what: 'A process classified as cpu_hog sustains CPU usage above 30% across multiple samples.',
     why: 'Sustained high CPU consumption indicates batch computation, compilation, or runaway loops.',
     how: 'IARIS throttles cpu_hog processes when system is under pressure, protecting latency-sensitive services.',
-    evidence: [
-      'CPU-hog labels correlate with top-bar CPU processes in visualization panels.',
-      'Repeated high CPU windows increase probability of protective scheduling actions.',
-    ],
-    operatorCheck: 'Confirm whether the same process remains in top CPU ranks across multiple updates.',
-    trustNote: 'Classification relies on observed behavior windows rather than one-off spikes.',
   },
   {
     title: 'How does IARIS decide?',
-    category: 'Decisioning',
-    confidence: 'High',
     what: 'IARIS computes an allocation_score (0–1) per process using behavior type, system state, and priority.',
     why: 'Score reflects impact: high score = high need for resources. Score drives the throttle/boost/maintain decision.',
     how: 'Boost: score ≥ 0.6 + system stress. Throttle: score < 0.4 + system pressure. Maintain: everything else.',
-    evidence: [
-      'Decision logs align with score distribution visible in the histogram and process table.',
-      'High-score processes are more likely to be protected or boosted under pressure.',
-    ],
-    operatorCheck: 'Cross-check a process score in Process Intelligence against its latest policy action.',
-    trustNote: 'Decision policy is transparent and auditable through score, reason, and action history.',
   },
   {
     title: 'What is the Cold Start problem?',
-    category: 'Reliability',
-    confidence: 'Medium',
     what: 'On first observation, IARIS has no history for a new process — allocation quality is uncertain.',
     why: 'Without historical data, the engine cannot accurately classify behavior or score allocation.',
     how: 'IARIS uses similarity matching to bootstrap new processes from known profiles, achieving ~82% accuracy immediately.',
-    evidence: [
-      'Newly observed processes initially have limited confidence until enough samples are collected.',
-      'Similarity bootstrapping reduces unstable decisions during early process life-cycle.',
-    ],
-    operatorCheck: 'For newly spawned apps, verify that recommendations become more stable after several updates.',
-    trustNote: 'Engine explicitly distinguishes early-learning behavior from mature profiles.',
   },
   {
     title: 'What are Learning Phases?',
-    category: 'Lifecycle',
-    confidence: 'High',
     what: 'Bootstrap → Adaptation → Stable. Each phase reflects how well the engine knows a process.',
     why: 'Processes in bootstrap have < 10 samples. Adaptation means EWMA is still converging. Stable means high confidence.',
     how: 'All processes reach stable phase within 90 seconds of observation. Decisions are most accurate in stable phase.',
-    evidence: [
-      'Longer-observed processes show lower volatility in score and policy changes.',
-      'Stable phase processes drive more predictable scheduler outcomes.',
-    ],
-    operatorCheck: 'When many processes are in early phases, expect temporary fluctuations before convergence.',
-    trustNote: 'Phase model provides explicit confidence progression instead of hiding uncertainty.',
   },
 ];
 
-function KnowledgePanel({ gameState, isIarisActive }) {
+function KnowledgePanel() {
   const [openIdx, setOpenIdx] = React.useState(null);
-  const [searchText, setSearchText] = React.useState('');
-  const [activeCategory, setActiveCategory] = React.useState('All');
-
-  const categories = ['All', ...new Set(KNOWLEDGE_ENTRIES.map((entry) => entry.category))];
-  const normalizedSearch = searchText.trim().toLowerCase();
-
-  const filteredEntries = KNOWLEDGE_ENTRIES.filter((entry) => {
-    const matchesCategory = activeCategory === 'All' || entry.category === activeCategory;
-    const searchable = [
-      entry.title,
-      entry.what,
-      entry.why,
-      entry.how,
-      ...(entry.evidence || []),
-      entry.operatorCheck,
-      entry.trustNote,
-    ].join(' ').toLowerCase();
-
-    const matchesSearch = normalizedSearch.length === 0 || searchable.includes(normalizedSearch);
-    return matchesCategory && matchesSearch;
-  });
-
-  const trackedProcesses = (gameState?.processes || []).filter(
-    (p) => p.pid !== 0 && !p.name.includes('Idle') && p.name !== 'System'
-  );
-
-  const latestDecision = gameState?.decisions?.length
-    ? gameState.decisions[gameState.decisions.length - 1]
-    : null;
-
-  const highSeverityInsights = (gameState?.insights || []).filter((ins) => ins.severity === 'high').length;
-  const recommendationInsight = (gameState?.insights || []).find((ins) => ins.type === 'recommendation');
-
   return (
-    <div className="glass-panel knowledge-panel" style={{ marginTop: 16 }}>
+    <div className="glass-panel" style={{ marginTop: 16 }}>
       <div className="panel-header">
         <FlaskConical size={18} color="var(--color-purple)" /> Knowledge Base
-        <span className="text-xs text-secondary knowledge-header-note" style={{ marginLeft: 'auto' }}>
-          Evidence-backed guidance refreshed on update #{gameState?.tick_count || 0}
+        <span className="text-xs text-secondary" style={{ marginLeft: 'auto' }}>
+          Click any concept to expand
         </span>
       </div>
-      <div className="knowledge-trust-grid">
-        <div className="knowledge-trust-card">
-          <span className="knowledge-trust-label">Engine Status</span>
-          <span className={`knowledge-trust-value ${isIarisActive ? 'stat-good' : 'stat-bad'}`}>
-            {isIarisActive ? 'IARIS Active' : 'Fallback Scheduler Active'}
-          </span>
-        </div>
-        <div className="knowledge-trust-card">
-          <span className="knowledge-trust-label">Tracked Processes</span>
-          <span className="knowledge-trust-value">{trackedProcesses.length}</span>
-        </div>
-        <div className="knowledge-trust-card">
-          <span className="knowledge-trust-label">High Severity Signals</span>
-          <span className={`knowledge-trust-value ${highSeverityInsights > 0 ? 'stat-bad' : 'stat-good'}`}>
-            {highSeverityInsights}
-          </span>
-        </div>
-        <div className="knowledge-trust-card">
-          <span className="knowledge-trust-label">Latest Engine Action</span>
-          <span className="knowledge-trust-value">
-            {latestDecision ? `${latestDecision.action.toUpperCase()} ${latestDecision.process_name}` : 'No action yet'}
-          </span>
-        </div>
-      </div>
-
-      <div className="knowledge-controls">
-        <input
-          type="text"
-          className="knowledge-search"
-          placeholder="Search concepts, policies, thresholds, actions..."
-          value={searchText}
-          onChange={(event) => setSearchText(event.target.value)}
-        />
-        <div className="knowledge-categories">
-          {categories.map((category) => (
-            <button
-              key={category}
-              type="button"
-              className={`knowledge-chip ${activeCategory === category ? 'active' : ''}`}
-              onClick={() => setActiveCategory(category)}
-            >
-              {category}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="knowledge-list">
-        {filteredEntries.map((entry, i) => (
-          <div key={entry.title}
-            className="knowledge-item"
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {KNOWLEDGE_ENTRIES.map((entry, i) => (
+          <div key={i}
+            style={{
+              border: '1px solid var(--border-color)',
+              borderRadius: 8,
+              overflow: 'hidden',
+              cursor: 'pointer',
+            }}
+            onClick={() => setOpenIdx(openIdx === i ? null : i)}
           >
-            <button
-              type="button"
-              className={`knowledge-item-header ${openIdx === i ? 'open' : ''}`}
-              onClick={() => setOpenIdx(openIdx === i ? null : i)}
-              aria-expanded={openIdx === i}
-            >
-              <span className="knowledge-item-title">{entry.title}</span>
-              <div className="knowledge-item-meta">
-                <span className="badge badge-outline">{entry.category}</span>
-                <span className={`badge ${entry.confidence === 'High' ? 'badge-green' : 'badge-yellow'}`}>
-                  Confidence: {entry.confidence}
-                </span>
-                <span className="knowledge-expand-icon">{openIdx === i ? '▲' : '▼'}</span>
-              </div>
-            </button>
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '10px 14px',
+              background: openIdx === i ? 'rgba(var(--accent-primary-rgb, 100, 100, 255), 0.08)' : 'transparent',
+              fontWeight: 600, fontSize: 14,
+            }}>
+              <span>{entry.title}</span>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{openIdx === i ? '▲' : '▼'}</span>
+            </div>
             {openIdx === i && (
-              <div className="knowledge-item-content">
-                <div className="knowledge-section">
-                  <span className="knowledge-section-label section-what">WHAT</span>
-                  <span>{entry.what}</span>
+              <div style={{ padding: '12px 14px 14px', borderTop: '1px solid var(--border-color)' }}>
+                <div style={{ marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-primary)', letterSpacing: 1 }}>WHAT  </span>
+                  <span style={{ fontSize: 13 }}>{entry.what}</span>
                 </div>
-                <div className="knowledge-section">
-                  <span className="knowledge-section-label section-why">WHY</span>
-                  <span>{entry.why}</span>
+                <div style={{ marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-yellow)', letterSpacing: 1 }}>WHY  </span>
+                  <span style={{ fontSize: 13 }}>{entry.why}</span>
                 </div>
-                <div className="knowledge-section">
-                  <span className="knowledge-section-label section-how">HOW</span>
-                  <span>{entry.how}</span>
-                </div>
-                <div className="knowledge-section knowledge-section-block">
-                  <span className="knowledge-section-label section-evidence">EVIDENCE SIGNALS</span>
-                  <ul className="knowledge-evidence-list">
-                    {entry.evidence.map((signal) => (
-                      <li key={signal}>{signal}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="knowledge-operator-check">
-                  <strong>Operator Check:</strong> {entry.operatorCheck}
-                </div>
-                <div className="knowledge-trust-note">
-                  <strong>Trust Basis:</strong> {entry.trustNote}
+                <div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-green)', letterSpacing: 1 }}>HOW  </span>
+                  <span style={{ fontSize: 13 }}>{entry.how}</span>
                 </div>
               </div>
             )}
           </div>
         ))}
-
-        {filteredEntries.length === 0 && (
-          <div className="knowledge-empty-state">
-            No matching concept found. Try a broader search or switch to another category.
-          </div>
-        )}
-      </div>
-
-      <div className="knowledge-footer-note">
-        {recommendationInsight
-          ? `Current recommendation: ${recommendationInsight.recommendation}`
-          : 'No recommendation emitted yet. Continue simulation to generate context-aware recommendations.'}
       </div>
     </div>
   );
 }
 
 function App() {
-  const tabConfig = [
-    { id: 'VISUALIZATION', label: 'VISUALIZATION' },
-    { id: 'RESULTS AND SIMULATION', label: 'RESULTS AND SIMULATION' },
-    { id: 'KEY INSIGHTS', label: 'KEY INSIGHTS' },
-    { id: 'IMPACT ANALYSIS', label: 'IMPACT ANALISIS' },
-    { id: 'KNOWLEDGE BASE', label: 'KNOWLEDGE BASE' },
-  ];
-
   const [gameState, setGameState] = useState({
     system: { cpu_percent: 0, memory_percent: 0, state: 'STABLE', behavior: 'BALANCED' },
     processes: [],
@@ -539,10 +371,7 @@ function App() {
               time: data.tick_count,
               cpu: render_cpu,
               memory: render_memory,
-              unop_cpu: isIarisActiveRef.current ? unoptimizedCpu : render_cpu, // lock to standard curve if off
-              stability: data.efficiency?.process_balance ?? 0,
-              latency: data.efficiency?.latency ?? 0,
-              efficiency: data.efficiency?.overall ?? 0,
+              unop_cpu: isIarisActiveRef.current ? unoptimizedCpu : render_cpu // lock to standard curve if off
             }];
             return newHistory.length > 60 ? newHistory.slice(newHistory.length - 60) : newHistory;
           });
@@ -716,93 +545,6 @@ function App() {
     return idx >= 0;
   });
 
-  const getTrendDelta = (series, key, windowSize = 6) => {
-    if (!series || series.length < windowSize * 2) return 0;
-    const recent = series.slice(-windowSize);
-    const previous = series.slice(-windowSize * 2, -windowSize);
-
-    const average = (values) => {
-      if (!values.length) return 0;
-      return values.reduce((sum, item) => sum + (Number(item[key]) || 0), 0) / values.length;
-    };
-
-    return average(recent) - average(previous);
-  };
-
-  const latestPoint = history.length > 0 ? history[history.length - 1] : null;
-  const latestCpu = latestPoint?.cpu ?? 0;
-  const latestMemory = latestPoint?.memory ?? 0;
-  const latestEfficiency = latestPoint?.efficiency ?? 0;
-  const latestLatency = latestPoint?.latency ?? 0;
-
-  const cpuAdvantage = latestPoint ? latestPoint.unop_cpu - latestPoint.cpu : 0;
-  const memoryTrendDelta = getTrendDelta(history, 'memory');
-  const cpuTrendDelta = getTrendDelta(history, 'cpu');
-  const efficiencyTrendDelta = getTrendDelta(history, 'efficiency');
-  const latencyTrendDelta = getTrendDelta(history, 'latency');
-
-  const memoryStatus = latestMemory >= 85 ? 'Critical' : latestMemory >= 65 ? 'Pressure' : 'Healthy';
-  const performanceBalance = latestEfficiency - latestLatency;
-  const balanceStatus = performanceBalance >= 12 ? 'Efficiency Leading' : performanceBalance >= 0 ? 'Balanced' : 'Latency Dominant';
-
-  const chartTooltipStyle = {
-    background: 'var(--bg-secondary)',
-    border: '1px solid var(--border-color)',
-    borderRadius: 8,
-  };
-
-  const formatPercent = (value) => `${Number(value || 0).toFixed(1)}%`;
-
-  const trackedProcesses = (gameState.processes || []).filter(
-    (p) => p.pid !== 0 && !p.name.includes('Idle') && p.name !== 'System'
-  );
-
-  const processResourceBars = trackedProcesses
-    .slice()
-    .sort((a, b) => b.avg_cpu - a.avg_cpu)
-    .slice(0, 8)
-    .map((p) => ({
-      process: p.name.length > 18 ? `${p.name.slice(0, 18)}...` : p.name,
-      fullName: p.name,
-      cpu: Number(p.avg_cpu.toFixed(1)),
-      memory: Number(p.avg_memory.toFixed(1)),
-      score: Number((p.allocation_score * 100).toFixed(1)),
-    }));
-
-  const scoreBins = [
-    { min: 0.0, max: 0.2, label: '0.0-0.2' },
-    { min: 0.2, max: 0.4, label: '0.2-0.4' },
-    { min: 0.4, max: 0.6, label: '0.4-0.6' },
-    { min: 0.6, max: 0.8, label: '0.6-0.8' },
-    { min: 0.8, max: 1.01, label: '0.8-1.0' },
-  ];
-
-  const allocationHistogram = scoreBins.map((bin) => {
-    const binItems = trackedProcesses.filter((p) => p.allocation_score >= bin.min && p.allocation_score < bin.max);
-    const avgCpu = binItems.length > 0
-      ? binItems.reduce((sum, p) => sum + p.avg_cpu, 0) / binItems.length
-      : 0;
-
-    return {
-      bucket: bin.label,
-      count: binItems.length,
-      avgCpu: Number(avgCpu.toFixed(1)),
-    };
-  });
-
-  const processScatterData = trackedProcesses.slice(0, 64).map((p) => ({
-    x: Number(p.avg_cpu.toFixed(1)),
-    y: Number(p.avg_memory.toFixed(1)),
-    z: Math.max(4, Number((p.allocation_score * 100).toFixed(1))),
-    name: p.name,
-    score: Number((p.allocation_score * 100).toFixed(1)),
-    behavior: p.behavior_type,
-  }));
-
-  const highestCpuProcess = processResourceBars[0]?.fullName || 'N/A';
-  const highestCpuValue = processResourceBars[0]?.cpu || 0;
-  const overloadedCount = trackedProcesses.filter((p) => p.avg_cpu >= 25).length;
-
   return (
     <div className="dashboard-container">
 
@@ -877,14 +619,14 @@ function App() {
       </header>
       {/* TABS NAVIGATION */}
       <div className="tabs-container" style={{ display: 'flex', gap: '8px', padding: '16px 0 8px 0', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: '16px' }}>
-        {tabConfig.map(tab => (
+        {['VISUALIZATION', 'RESULTS AND SIMULATION', 'KEY INSIGHTS', 'IMPACT ANALYSIS', 'KNOWLEDGE BASE'].map(tab => (
           <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            key={tab}
+            onClick={() => setActiveTab(tab)}
             style={{
               padding: '8px 16px',
-              background: activeTab === tab.id ? 'var(--accent-primary)' : 'rgba(255,255,255,0.05)',
-              color: activeTab === tab.id ? '#fff' : 'var(--text-secondary)',
+              background: activeTab === tab ? 'var(--accent-primary)' : 'rgba(255,255,255,0.05)',
+              color: activeTab === tab ? '#fff' : 'var(--text-secondary)',
               border: 'none',
               borderRadius: '4px',
               fontFamily: 'monospace',
@@ -894,7 +636,7 @@ function App() {
               transition: 'all 0.2s ease'
             }}
           >
-            {tab.label}
+            {tab}
           </button>
         ))}
       </div>
@@ -926,430 +668,77 @@ function App() {
       )}
 
       {activeTab === 'VISUALIZATION' && (
-        <>
-        <div className="visualization-layout">
-          <div className="glass-panel graph-container visualization-main visualization-main-panel" style={{ padding: '16px 24px'}}>
-            {/* Pulse overlay */}
-            {graphPulse && <div className="graph-pulse-overlay" />}
-            
-            <div className="panel-header mb-2" style={{ borderBottom: 'none' }}>
-              <span><Activity size={18} style={{ display: 'inline', verticalAlign: 'text-bottom' }} /> Engine Effectiveness Visualization</span>
-              <div className="flex gap-4 text-xs font-normal">
-                <span className="flex items-center gap-2"><span style={{width: 10, height: 10, background: 'var(--accent-primary)', display: 'inline-block', borderRadius: '50%'}}></span> Actual CPU Loading</span>
-                <span className="flex items-center gap-2"><span style={{width: 10, height: 10, border: '1px dashed var(--text-secondary)', display: 'inline-block'}}></span> Simulated Non-IARIS Loading</span>
-                {graphMarkers.length > 0 && (
-                  <span className="flex items-center gap-2"><span style={{width: 10, height: 10, background: 'var(--color-red)', display: 'inline-block', borderRadius: '50%', opacity: 0.7}}></span> Event Markers</span>
-                )}
-              </div>
-            </div>
-            <p className="chart-context-text">
-              Compares live CPU load against a simulated non-IARIS baseline over the latest 60 updates. Lower actual CPU versus baseline indicates optimization.
-            </p>
-            <div className="chart-summary-row">
-              <div className="chart-stat">
-                <span className="chart-stat-label">Current CPU</span>
-                <span className="chart-stat-value">{formatPercent(latestCpu)}</span>
-              </div>
-              <div className="chart-stat">
-                <span className="chart-stat-label">IARIS vs Baseline</span>
-                <span className={`chart-stat-value ${cpuAdvantage >= 0 ? 'stat-good' : 'stat-bad'}`}>
-                  {cpuAdvantage >= 0 ? '↓' : '↑'} {formatPercent(Math.abs(cpuAdvantage))}
-                </span>
-              </div>
-              <div className="chart-stat">
-                <span className="chart-stat-label">CPU Trend (6-tick avg)</span>
-                <span className={`chart-stat-value ${cpuTrendDelta <= 0 ? 'stat-good' : 'stat-bad'}`}>
-                  {cpuTrendDelta >= 0 ? '↑' : '↓'} {formatPercent(Math.abs(cpuTrendDelta))}
-                </span>
-              </div>
-              <div className="chart-stat">
-                <span className="chart-stat-label">Detected Events</span>
-                <span className="chart-stat-value">{markerPositions.length}</span>
-              </div>
-            </div>
-            <div className="visualization-main-chart" style={{ width: '100%', position: 'relative' }}>
-              {history && history.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={history} margin={{ top: 10, right: 12, left: 4, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorCpu" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="var(--accent-primary)" stopOpacity={0.4}/>
-                        <stop offset="95%" stopColor="var(--accent-primary)" stopOpacity={0}/>
-                      </linearGradient>
-                      <linearGradient id="colorUnop" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="var(--text-secondary)" stopOpacity={0.2}/>
-                        <stop offset="95%" stopColor="var(--text-secondary)" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                    <XAxis
-                      dataKey="time"
-                      tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
-                      tickLine={false}
-                      axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
-                      minTickGap={24}
-                    />
-                    <YAxis
-                      domain={[0, 100]}
-                      tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
-                      tickLine={false}
-                      axisLine={false}
-                      width={34}
-                    />
-                    <Tooltip 
-                      contentStyle={chartTooltipStyle}
-                      itemStyle={{ fontSize: 12, fontWeight: 'bold' }}
-                      labelStyle={{ color: 'var(--text-secondary)', fontSize: 11 }}
-                      labelFormatter={(label) => `Update #${label}`}
-                      formatter={(value, name) => [formatPercent(value), name]}
-                    />
-                    {/* Event marker reference lines */}
-                    {graphMarkers.map((marker) => (
-                      <ReferenceLine
-                        key={marker.id}
-                        x={marker.tick}
-                        stroke={marker.type === 'throttle' ? '#2ecc71' : marker.type === 'spike' ? '#e74c3c' : '#3498db'}
-                        strokeDasharray="3 3"
-                        strokeOpacity={0.6}
-                        label={{
-                          value: '📍',
-                          position: 'top',
-                          fontSize: 12,
-                          offset: 5
-                        }}
-                      />
-                    ))}
-                    <Area name="Unoptimized Baseline" type="monotone" dataKey="unop_cpu" stroke="rgba(255,255,255,0.2)" strokeDasharray="5 5" fillOpacity={1} fill="url(#colorUnop)" isAnimationActive={false} />
-                    <Area name="Active Engine CPU" type="monotone" dataKey="cpu" stroke="var(--accent-primary)" fillOpacity={1} fill="url(#colorCpu)" isAnimationActive={false} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-secondary)' }}>
-                  Waiting for system metrics...
-                </div>
-              )}
-              
-              {!isIarisActive && (
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(26,26,26,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                  <span className="badge badge-critical" style={{ fontSize: 13, padding: '8px 16px' }}>IARIS Offline – Showing Degraded Metric State</span>
-                </div>
+        <div className="simulation-grid">
+        <div className="glass-panel graph-container" style={{ padding: '16px 24px'}}>
+          {/* Pulse overlay */}
+          {graphPulse && <div className="graph-pulse-overlay" />}
+          
+          <div className="panel-header mb-2" style={{ borderBottom: 'none' }}>
+            <span><Activity size={18} style={{ display: 'inline', verticalAlign: 'text-bottom' }} /> Engine Effectiveness Visualization</span>
+            <div className="flex gap-4 text-xs font-normal">
+              <span className="flex items-center gap-2"><span style={{width: 10, height: 10, background: 'var(--accent-primary)', display: 'inline-block', borderRadius: '50%'}}></span> Actual CPU Loading</span>
+              <span className="flex items-center gap-2"><span style={{width: 10, height: 10, border: '1px dashed var(--text-secondary)', display: 'inline-block'}}></span> Simulated Non-IARIS Loading</span>
+              {graphMarkers.length > 0 && (
+                <span className="flex items-center gap-2"><span style={{width: 10, height: 10, background: 'var(--color-red)', display: 'inline-block', borderRadius: '50%', opacity: 0.7}}></span> Event Markers</span>
               )}
             </div>
           </div>
-
-          <div className="glass-panel visualization-mini visualization-memory">
-              <div className="panel-header" style={{ marginBottom: 12 }}>
-                <span><HardDrive size={16} style={{ display: 'inline', verticalAlign: 'text-bottom' }} /> Memory Trend</span>
-              </div>
-              <p className="chart-context-text chart-context-mini">
-                RAM utilization history. Sustained levels above 75% indicate probable memory pressure.
-              </p>
-              <div className="chart-summary-row chart-summary-mini">
-                <div className="chart-stat">
-                  <span className="chart-stat-label">Current</span>
-                  <span className="chart-stat-value">{formatPercent(latestMemory)}</span>
-                </div>
-                <div className="chart-stat">
-                  <span className="chart-stat-label">Trend (6-tick avg)</span>
-                  <span className={`chart-stat-value ${memoryTrendDelta <= 0 ? 'stat-good' : 'stat-bad'}`}>
-                    {memoryTrendDelta >= 0 ? '↑' : '↓'} {formatPercent(Math.abs(memoryTrendDelta))}
-                  </span>
-                </div>
-                <div className="chart-stat">
-                  <span className="chart-stat-label">Health</span>
-                  <span className={`chart-stat-value ${memoryStatus === 'Healthy' ? 'stat-good' : memoryStatus === 'Pressure' ? 'stat-warn' : 'stat-bad'}`}>
-                    {memoryStatus}
-                  </span>
-                </div>
-              </div>
-              <div style={{ height: 150, width: '100%' }}>
-                {history && history.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={history} margin={{ top: 8, right: 6, left: 2, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="colorMemory" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="var(--color-blue)" stopOpacity={0.35}/>
-                          <stop offset="95%" stopColor="var(--color-blue)" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                      <XAxis dataKey="time" hide />
-                      <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} tickLine={false} axisLine={false} width={28} />
-                      <Tooltip
-                        contentStyle={chartTooltipStyle}
-                        labelStyle={{ color: 'var(--text-secondary)', fontSize: 11 }}
-                        labelFormatter={(label) => `Update #${label}`}
-                        formatter={(value, name) => [formatPercent(value), name]}
-                      />
-                      <Area name="Memory Usage" type="monotone" dataKey="memory" stroke="var(--color-blue)" fillOpacity={1} fill="url(#colorMemory)" isAnimationActive={false} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-secondary)' }}>
-                    Waiting for memory telemetry...
-                  </div>
-                )}
-              </div>
-          </div>
-
-          <div className="glass-panel visualization-mini visualization-efficiency">
-              <div className="panel-header" style={{ marginBottom: 12 }}>
-                <span><Zap size={16} style={{ display: 'inline', verticalAlign: 'text-bottom' }} /> Efficiency vs Latency</span>
-              </div>
-              <p className="chart-context-text chart-context-mini">
-                Higher efficiency with lower latency indicates better scheduling quality and service responsiveness.
-              </p>
-              <div className="chart-summary-row chart-summary-mini">
-                <div className="chart-stat">
-                  <span className="chart-stat-label">Efficiency</span>
-                  <span className={`chart-stat-value ${efficiencyTrendDelta >= 0 ? 'stat-good' : 'stat-bad'}`}>
-                    {formatPercent(latestEfficiency)}
-                  </span>
-                </div>
-                <div className="chart-stat">
-                  <span className="chart-stat-label">Latency</span>
-                  <span className={`chart-stat-value ${latencyTrendDelta <= 0 ? 'stat-good' : 'stat-bad'}`}>
-                    {formatPercent(latestLatency)}
-                  </span>
-                </div>
-                <div className="chart-stat">
-                  <span className="chart-stat-label">Balance</span>
-                  <span className={`chart-stat-value ${performanceBalance >= 0 ? 'stat-good' : 'stat-bad'}`}>
-                    {balanceStatus}
-                  </span>
-                </div>
-              </div>
-              <div style={{ height: 150, width: '100%' }}>
-                {history && history.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={history} margin={{ top: 8, right: 6, left: 2, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="colorEfficiency" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="var(--color-green)" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="var(--color-green)" stopOpacity={0}/>
-                        </linearGradient>
-                        <linearGradient id="colorLatency" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="var(--color-yellow)" stopOpacity={0.25}/>
-                          <stop offset="95%" stopColor="var(--color-yellow)" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                      <XAxis dataKey="time" hide />
-                      <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} tickLine={false} axisLine={false} width={28} />
-                      <Tooltip
-                        contentStyle={chartTooltipStyle}
-                        labelStyle={{ color: 'var(--text-secondary)', fontSize: 11 }}
-                        labelFormatter={(label) => `Update #${label}`}
-                        formatter={(value, name) => [formatPercent(value), name === 'Efficiency' ? 'Efficiency (higher is better)' : 'Latency (lower is better)']}
-                      />
-                      <Area name="Efficiency" type="monotone" dataKey="efficiency" stroke="var(--color-green)" fillOpacity={1} fill="url(#colorEfficiency)" isAnimationActive={false} />
-                      <Area name="Latency" type="monotone" dataKey="latency" stroke="var(--color-yellow)" fillOpacity={1} fill="url(#colorLatency)" isAnimationActive={false} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-secondary)' }}>
-                    Waiting for efficiency telemetry...
-                  </div>
-                )}
-              </div>
-          </div>
-        </div>
-
-        <div className="detail-graphs-grid">
-          <div className="glass-panel detail-graph-card">
-            <div className="panel-header" style={{ marginBottom: 12 }}>
-              <span><Cpu size={16} style={{ display: 'inline', verticalAlign: 'text-bottom' }} /> Top Process Resource Mix (Bar)</span>
-            </div>
-            <p className="chart-context-text chart-context-mini">
-              Compares per-process CPU, memory, and allocation score (top 8 by CPU load). Useful for identifying heavy applications quickly.
-            </p>
-            <div className="chart-summary-row chart-summary-mini">
-              <div className="chart-stat">
-                <span className="chart-stat-label">Highest CPU Process</span>
-                <span className="chart-stat-value" title={highestCpuProcess}>{highestCpuProcess}</span>
-              </div>
-              <div className="chart-stat">
-                <span className="chart-stat-label">Peak CPU</span>
-                <span className="chart-stat-value stat-bad">{formatPercent(highestCpuValue)}</span>
-              </div>
-              <div className="chart-stat">
-                <span className="chart-stat-label">Processes Above 25% CPU</span>
-                <span className={`chart-stat-value ${overloadedCount > 0 ? 'stat-bad' : 'stat-good'}`}>{overloadedCount}</span>
-              </div>
-            </div>
-            <div className="detail-graph-chart">
-              {processResourceBars.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={processResourceBars} margin={{ top: 4, right: 10, left: 0, bottom: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                    <XAxis dataKey="process" tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} interval={0} angle={-20} textAnchor="end" height={45} />
-                    <YAxis
-                      domain={[0, 100]}
-                      tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
-                      tickLine={false}
-                      axisLine={false}
-                      label={{ value: 'Usage / Score (%)', angle: -90, position: 'insideLeft', style: { fill: 'var(--text-secondary)', fontSize: 10 } }}
-                    />
-                    <Tooltip
-                      contentStyle={chartTooltipStyle}
-                      labelStyle={{ color: 'var(--text-secondary)', fontSize: 11 }}
-                      formatter={(value, name, item) => [formatPercent(value), name]}
-                      labelFormatter={(label, payload) => payload?.[0]?.payload?.fullName || label}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar name="CPU %" dataKey="cpu" fill="var(--accent-primary)" radius={[3, 3, 0, 0]} />
-                    <Bar name="Memory %" dataKey="memory" fill="var(--color-blue)" radius={[3, 3, 0, 0]} />
-                    <Bar name="Allocation Score %" dataKey="score" fill="var(--color-green)" radius={[3, 3, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="detail-graph-empty">Waiting for process resource telemetry...</div>
-              )}
-            </div>
-            <p className="detail-graph-footer">
-              Interpretation: large CPU bars with low allocation score usually indicate candidates for throttling.
-            </p>
-          </div>
-
-          <div className="glass-panel detail-graph-card">
-            <div className="panel-header" style={{ marginBottom: 12 }}>
-              <span><ActivitySquare size={16} style={{ display: 'inline', verticalAlign: 'text-bottom' }} /> Allocation Score Histogram</span>
-            </div>
-            <p className="chart-context-text chart-context-mini">
-              Histogram of process allocation scores grouped into score bands. Shows how workloads are distributed from background to critical.
-            </p>
-            <div className="chart-summary-row chart-summary-mini">
-              <div className="chart-stat">
-                <span className="chart-stat-label">Tracked Processes</span>
-                <span className="chart-stat-value">{trackedProcesses.length}</span>
-              </div>
-              <div className="chart-stat">
-                <span className="chart-stat-label">High Priority (0.8-1.0)</span>
-                <span className="chart-stat-value stat-good">{allocationHistogram[4]?.count || 0}</span>
-              </div>
-              <div className="chart-stat">
-                <span className="chart-stat-label">Low Priority (0.0-0.2)</span>
-                <span className="chart-stat-value stat-warn">{allocationHistogram[0]?.count || 0}</span>
-              </div>
-            </div>
-            <div className="detail-graph-chart">
-              {trackedProcesses.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={allocationHistogram} margin={{ top: 4, right: 12, left: 0, bottom: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                    <XAxis
-                      dataKey="bucket"
-                      tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
-                      label={{ value: 'Allocation Score Range', position: 'insideBottom', offset: -4, style: { fill: 'var(--text-secondary)', fontSize: 10 } }}
-                    />
-                    <YAxis
-                      yAxisId="left"
-                      tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
-                      tickLine={false}
-                      axisLine={false}
-                      label={{ value: 'Process Count', angle: -90, position: 'insideLeft', style: { fill: 'var(--text-secondary)', fontSize: 10 } }}
-                    />
-                    <YAxis
-                      yAxisId="right"
-                      orientation="right"
-                      domain={[0, 100]}
-                      tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <Tooltip
-                      contentStyle={chartTooltipStyle}
-                      labelStyle={{ color: 'var(--text-secondary)', fontSize: 11 }}
-                      formatter={(value, name) => [name === 'Processes' ? value : formatPercent(value), name]}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar yAxisId="left" name="Processes" dataKey="count" fill="var(--color-purple)" radius={[4, 4, 0, 0]} />
-                    <Bar yAxisId="right" name="Avg CPU in Bin" dataKey="avgCpu" fill="var(--accent-primary)" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="detail-graph-empty">Waiting for process classification telemetry...</div>
-              )}
-            </div>
-            <p className="detail-graph-footer">
-              Interpretation: if low-score bins dominate while CPU rises, scheduler pressure is increasing and balancing actions are expected.
-            </p>
-          </div>
-
-          <div className="glass-panel detail-graph-card">
-            <div className="panel-header" style={{ marginBottom: 12 }}>
-              <span><Server size={16} style={{ display: 'inline', verticalAlign: 'text-bottom' }} /> Process Footprint Scatter</span>
-            </div>
-            <p className="chart-context-text chart-context-mini">
-              Scatter view of each process: X = CPU, Y = Memory, bubble size = allocation score. Reveals heavy and imbalanced applications.
-            </p>
-            <div className="chart-summary-row chart-summary-mini">
-              <div className="chart-stat">
-                <span className="chart-stat-label">Plotted Processes</span>
-                <span className="chart-stat-value">{processScatterData.length}</span>
-              </div>
-              <div className="chart-stat">
-                <span className="chart-stat-label">CPU-Memory Outliers</span>
-                <span className="chart-stat-value stat-warn">
-                  {processScatterData.filter((p) => p.x >= 30 || p.y >= 30).length}
-                </span>
-              </div>
-              <div className="chart-stat">
-                <span className="chart-stat-label">Large Score Bubbles (&gt;70)</span>
-                <span className="chart-stat-value stat-good">
-                  {processScatterData.filter((p) => p.score >= 70).length}
-                </span>
-              </div>
-            </div>
-            <div className="detail-graph-chart">
-              {processScatterData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <ScatterChart margin={{ top: 8, right: 12, left: 4, bottom: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                    <XAxis
-                      type="number"
-                      dataKey="x"
-                      name="CPU"
-                      unit="%"
-                      domain={[0, 100]}
-                      tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
-                      tickLine={false}
-                      label={{ value: 'CPU Usage (%)', position: 'insideBottom', offset: -4, style: { fill: 'var(--text-secondary)', fontSize: 10 } }}
-                    />
-                    <YAxis
-                      type="number"
-                      dataKey="y"
-                      name="Memory"
-                      unit="%"
-                      domain={[0, 100]}
-                      tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
-                      tickLine={false}
-                      axisLine={false}
-                      label={{ value: 'Memory Usage (%)', angle: -90, position: 'insideLeft', style: { fill: 'var(--text-secondary)', fontSize: 10 } }}
-                    />
-                    <ZAxis type="number" dataKey="z" range={[70, 380]} name="Allocation Score" unit="%" />
-                    <Tooltip
-                      cursor={{ strokeDasharray: '3 3' }}
-                      contentStyle={chartTooltipStyle}
-                      formatter={(value, name) => {
-                        if (name === 'Allocation Score') return [formatPercent(value), name];
-                        return [`${Number(value).toFixed(1)}%`, name];
+          <div style={{ height: 210, width: '100%', position: 'relative' }}>
+            {history && history.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={history} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorCpu" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--accent-primary)" stopOpacity={0.4}/>
+                      <stop offset="95%" stopColor="var(--accent-primary)" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorUnop" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--text-secondary)" stopOpacity={0.2}/>
+                      <stop offset="95%" stopColor="var(--text-secondary)" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                  <XAxis dataKey="time" hide />
+                  <YAxis domain={[0, 100]} tick={{fontSize: 10, fill: 'var(--text-secondary)'}} stroke="transparent" />
+                  <Tooltip 
+                    contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 8 }}
+                    itemStyle={{ fontSize: 12, fontWeight: 'bold' }}
+                    labelStyle={{ display: 'none' }}
+                  />
+                  {/* Event marker reference lines */}
+                  {graphMarkers.map((marker) => (
+                    <ReferenceLine
+                      key={marker.id}
+                      x={marker.tick}
+                      stroke={marker.type === 'throttle' ? '#2ecc71' : marker.type === 'spike' ? '#e74c3c' : '#3498db'}
+                      strokeDasharray="3 3"
+                      strokeOpacity={0.6}
+                      label={{
+                        value: '📍',
+                        position: 'top',
+                        fontSize: 12,
+                        offset: 5
                       }}
-                      labelFormatter={(_, payload) => payload?.[0]?.payload?.name || 'Process'}
                     />
-                    <Scatter name="Process Footprint" data={processScatterData} fill="var(--color-blue)" fillOpacity={0.65} />
-                  </ScatterChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="detail-graph-empty">Waiting for process footprint telemetry...</div>
-              )}
-            </div>
-            <p className="detail-graph-footer">
-              Interpretation: top-right bubbles are resource-heavy processes; larger circles indicate stronger scheduling priority.
-            </p>
+                  ))}
+                  <Area name="Unoptimized Baseline" type="monotone" dataKey="unop_cpu" stroke="rgba(255,255,255,0.2)" strokeDasharray="5 5" fillOpacity={1} fill="url(#colorUnop)" isAnimationActive={false} />
+                  <Area name="Active Engine CPU" type="monotone" dataKey="cpu" stroke="var(--accent-primary)" fillOpacity={1} fill="url(#colorCpu)" isAnimationActive={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-secondary)' }}>
+                Waiting for system metrics...
+              </div>
+            )}
+            
+            {!isIarisActive && (
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(26,26,26,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                <span className="badge badge-critical" style={{ fontSize: 13, padding: '8px 16px' }}>IARIS Offline – Showing Degraded Metric State</span>
+              </div>
+            )}
           </div>
         </div>
-        </>
+        </div>
       )}
 
       {activeTab === 'RESULTS AND SIMULATION' && (
@@ -1419,8 +808,10 @@ function App() {
             )}
           </div>
         </div>
+          </div>
+          <div className="simulation-grid" style={ marginTop: '16px' }>
         {/* What-If Simulation — with BUTTON FEEDBACK */}
-        <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column' }}>
+        <div className="glass-panel" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column' }}>
           <div className="panel-header">What-If Simulation</div>
           <div className="flex-col gap-2" style={{ flexGrow: 1, justifyContent: 'center' }}>
             <SimButton 
@@ -1449,7 +840,7 @@ function App() {
           </div>
         </div>
           </div>
-          <div style={{ marginTop: '16px' }}>
+          <div style={ marginTop: '16px' }>
       {/* ═══════════════════════════════════════════════════════════════════
           IMPACT METRICS — with DELTA INDICATORS
           ═══════════════════════════════════════════════════════════════════ */}
@@ -1636,9 +1027,9 @@ function App() {
 
       {activeTab === 'IMPACT ANALYSIS' && (
         <>
-          <div className="impact-overview-grid">
+          <div className="top-panels-grid">
         {/* Workload Intelligence — with DELTA INDICATORS */}
-        <div className="glass-panel impact-workload-panel">
+        <div className="glass-panel">
           <div className="panel-header">
              Workload Intelligence
           </div>
@@ -1676,6 +1067,7 @@ function App() {
             )}
           </div>
         </div>
+          </div>
       {/* ═════════════════════════════════════════════════════════════════════
           THROTTLING  &  LIMITATION PANEL
           ═════════════════════════════════════════════════════════════════════ */}
@@ -1690,11 +1082,11 @@ function App() {
           : 0;
         const overThrottleInsight = gameState.insights?.find(i => i.type === 'risk' && i.message.toLowerCase().includes('throttle'));
         return (
-          <div className="glass-panel impact-throttle-panel">
+          <div className="glass-panel" style={{ marginTop: 16 }}>
             <div className="panel-header">
               <TrendingDown size={18} color="var(--color-red)" /> Throttling &amp; Limitation
             </div>
-            <div className="impact-throttle-stats-grid">
+            <div className="top-panels-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
               <div className="metric-card" style={{ textAlign: 'center' }}>
                 <div className="text-xs text-secondary font-bold uppercase" style={{ marginBottom: 4 }}>Throttled</div>
                 <div className="text-lg font-bold" style={{ color: throttled.length > 0 ? 'var(--color-red)' : 'var(--color-green)' }}>{uniqueThrottled.length}</div>
@@ -1734,7 +1126,6 @@ function App() {
           </div>
         );
       })()}
-          </div>
       {/* ═════════════════════════════════════════════════════════════════════
           PREDICTION PANEL — from backend insights (type=prediction)
           ═════════════════════════════════════════════════════════════════════ */}
@@ -1742,7 +1133,7 @@ function App() {
         const predictions = (gameState.insights || []).filter(i => i.type === 'prediction');
         const recommendations = (gameState.insights || []).filter(i => i.type === 'recommendation');
         return (
-          <div className="simulation-grid impact-forecast-grid" style={{ marginTop: 16 }}>
+          <div className="simulation-grid" style={{ marginTop: 16 }}>
             <div className="glass-panel">
               <div className="panel-header"><Activity size={18} color="var(--color-blue)" /> System Predictions</div>
               {predictions.length > 0 ? predictions.map((p, i) => (
@@ -1776,7 +1167,7 @@ function App() {
       {/* ═════════════════════════════════════════════════════════════════════
           KNOWLEDGE PANEL — static educational content
           ═════════════════════════════════════════════════════════════════════ */}
-      <KnowledgePanel gameState={gameState} isIarisActive={isIarisActive} />
+      <KnowledgePanel />
         </>
       )}
 
