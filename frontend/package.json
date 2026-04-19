@@ -13,7 +13,7 @@
     "lint":             "eslint .",
     "preview":          "node node_modules/vite/bin/vite.js preview",
     "electron:dev":     "node node_modules/vite/bin/vite.js build && node node_modules/electron/cli.js .",
-    "electron:build":   "node node_modules/vite/bin/vite.js build && node node_modules/electron-builder/cli.js"
+    "electron:build":   "node node_modules/vite/bin/vite.js build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false node node_modules/electron-builder/cli.js"
   },
   "dependencies": {
     "lucide-react":       "^1.8.0",
@@ -49,7 +49,7 @@
     ],
     "extraResources": [
       {
-        "from": "../venv",
+        "from": "../.venv",
         "to": "venv",
         "filter": [
           "**/*"
@@ -65,7 +65,8 @@
     ],
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],
-      "icon":   "electron/icon.ico"
+      "icon":   "electron/icon.ico",
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick":           false,

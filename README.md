@@ -101,6 +101,57 @@ npm install
 
 ---
 
+## 📦 Building a Standalone Executable
+
+Want to run IARIS as a single Windows executable without installing Python or Node.js separately? Follow these steps to build a complete standalone application.
+
+### Quick Start
+
+From the project root:
+
+**Option 1: Batch File (Easiest)**
+```batch
+build_exe.bat
+```
+
+**Option 2: PowerShell**
+```powershell
+.\build_exe.ps1
+```
+
+**Option 3: Python**
+```bash
+python build_exe.py
+```
+
+### What You Get
+
+A complete, self-contained Windows installer that bundles:
+- ✅ React frontend (Electron app)
+- ✅ Python backend (FastAPI server)
+- ✅ All dependencies (psutil, uvicorn, textual, etc.)
+- ✅ Desktop shortcuts and Start Menu entry
+
+**Output:** `frontend\dist-electron\IARIS Setup 1.0.0.exe` (~150-200 MB)
+
+### Detailed Build Guide
+
+For comprehensive instructions, prerequisites, troubleshooting, and customization options, see:
+- **[BUILD_EXE_GUIDE.md](BUILD_EXE_GUIDE.md)** — Full documentation
+- **[BUILD_QUICK_REFERENCE.md](BUILD_QUICK_REFERENCE.md)** — Quick reference card
+
+### Validate Your Setup First
+
+Before building, verify your environment:
+
+```bash
+python build_diagnostics.py
+```
+
+This checks Python version, Node.js, dependencies, disk space, and ports.
+
+---
+
 ## 🎮 Usage Guide
 
 IARIS supports three active run modes: backend API, web dashboard, and Electron desktop app.
