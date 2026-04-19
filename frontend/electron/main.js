@@ -4,7 +4,7 @@
  * Startup sequence:
  *   1. Spawn FastAPI backend (venv Python + uvicorn)
  *   2. Show loading window while polling /api/state
- *   3. When backend ready → load http://127.0.0.1:8000 in main window
+ *   3. When backend ready → load bundled React UI (dist/index.html)
  *   4. On window close → kill backend → quit
  */
 
@@ -21,9 +21,22 @@ const API_BASE    = `http://127.0.0.1:${PORT}`;
 const POLL_MS     = 500;
 const POLL_TIMEOUT_MS = 15000;  // 15 seconds max wait
 
-// Resolve venv Python relative to this file (frontend/electron/ → project root)
-const PROJECT_ROOT = path.join(__dirname, '..', '..');
-const PYTHON_BIN   = path.join(PROJECT_ROOT, 'venv', 'Scripts', 'python.exe');
+// In packaged mode, backend resources live under process.resourcesPath.
+const DEV_PROJECT_ROOT = path.join(__dirname, '..', '..');
+const PROJECT_ROOT = app.isPackaged ? process.resourcesPath : DEV_PROJECT_ROOT;
+const FRONTEND_INDEX = path.join(__dirname, '..', 'dist', 'index.html');
+
+function resolvePythonBin() {
+  const candidates = [
+    process.env.IARIS_PYTHON_BIN,
+    path.join(PROJECT_ROOT, 'venv', 'Scripts', 'python.exe'),
+    path.join(DEV_PROJECT_ROOT, 'venv', 'Scripts', 'python.exe'),
+  ].filter(Boolean);
+
+  return candidates.find((candidate) => fs.existsSync(candidate)) || null;
+}
+
+const PYTHON_BIN = resolvePythonBin();
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
@@ -32,10 +45,17 @@ let loadingWin   = null;
 let backendProc  = null;
 let pollTimer    = null;
 let pollStart    = null;
+let startupError = '';
 
 // ─── Backend Management ───────────────────────────────────────────────────────
 
 function spawnBackend() {
+  if (!PYTHON_BIN) {
+    startupError = 'Python runtime not found. Expected bundled venv at resources/venv.';
+    console.error('[IARIS] ' + startupError);
+    return;
+  }
+
   console.log('[IARIS] Spawning backend:', PYTHON_BIN);
   console.log('[IARIS] Project root:    ', PROJECT_ROOT);
 
@@ -55,6 +75,11 @@ function spawnBackend() {
   backendProc.on('close', code => {
     console.log(`[IARIS] Backend exited with code ${code}`);
     backendProc = null;
+  });
+
+  backendProc.on('error', err => {
+    startupError = `Backend spawn failed: ${err.message}`;
+    console.error('[IARIS] ' + startupError);
   });
 }
 
@@ -175,7 +200,14 @@ function createMainWindow() {
     title: 'IARIS — Intent-Aware Adaptive Resource Intelligence',
   });
 
-  mainWindow.loadURL(`${API_BASE}`);
+  // Load the bundled renderer directly. Renderer talks to backend via absolute API/WS URLs.
+  if (fs.existsSync(FRONTEND_INDEX)) {
+    mainWindow.loadFile(FRONTEND_INDEX);
+  } else {
+    // Fallback for unexpected packaging layouts.
+    console.warn('[IARIS] Frontend bundle not found, falling back to backend root URL');
+    mainWindow.loadURL(`${API_BASE}`);
+  }
 
   mainWindow.once('ready-to-show', () => {
     if (loadingWin && !loadingWin.isDestroyed()) {
@@ -237,6 +269,7 @@ app.whenReady().then(() => {
           <body>
             <h1>⚠ Engine Failed to Start</h1>
             <p>IARIS backend did not respond within 15 seconds.</p>
+            ${startupError ? `<p><strong>Details:</strong> ${startupError}</p>` : ''}
             <p>Ensure Python venv is set up: <br/><code>venv\\Scripts\\python -m pip install -e .</code></p>
             <button onclick="window.close()">Close</button>
           </body>

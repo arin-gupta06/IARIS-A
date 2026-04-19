@@ -47,6 +47,22 @@
       "electron/**",
       "!node_modules"
     ],
+    "extraResources": [
+      {
+        "from": "../venv",
+        "to": "venv",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../iaris",
+        "to": "iaris",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],
       "icon":   "electron/icon.ico"
