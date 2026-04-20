@@ -57,6 +57,18 @@ class IntelligenceRefreshRequest(BaseModel):
     force_external: bool = True
 
 
+class TuningPayload(BaseModel):
+    cold_start_threshold: Optional[float] = None
+    cache_ttl: Optional[int] = None
+    ewma_alpha: Optional[float] = None
+    process_churn_sensitivity: Optional[int] = None
+
+
+class TuningApplyRequest(BaseModel):
+    confirm: bool = False
+    tuning: TuningPayload
+
+
 # ─── WebSocket Manager ───────────────────────────────────────────────────────
 
 class ConnectionManager:
@@ -322,6 +334,42 @@ async def get_config():
         "pressure_memory_threshold": cfg.pressure_memory_threshold,
         "critical_memory_threshold": cfg.critical_memory_threshold,
     }
+
+
+@app.get("/api/tuning")
+async def get_tuning():
+    """Get current tuning settings, ranges, and baseline impact prediction."""
+    if not engine:
+        raise HTTPException(503, "Engine not initialized")
+    return engine.get_tuning_state()
+
+
+@app.post("/api/tuning/preview")
+async def preview_tuning(payload: TuningPayload):
+    """Preview tuning impact without mutating live engine state."""
+    if not engine:
+        raise HTTPException(503, "Engine not initialized")
+    return engine.preview_tuning(payload.model_dump(exclude_none=True))
+
+
+@app.put("/api/tuning/apply")
+async def apply_tuning(req: TuningApplyRequest):
+    """Apply tuning values only when explicitly confirmed by client."""
+    if not engine:
+        raise HTTPException(503, "Engine not initialized")
+    if not req.confirm:
+        raise HTTPException(400, "Confirmation required to apply tuning changes")
+    return engine.apply_tuning(req.tuning.model_dump(exclude_none=True))
+
+
+@app.post("/api/tuning/reset")
+async def reset_tuning(confirm: bool = False):
+    """Reset tuning settings to startup defaults."""
+    if not engine:
+        raise HTTPException(503, "Engine not initialized")
+    if not confirm:
+        raise HTTPException(400, "Confirmation required to reset tuning")
+    return engine.reset_tuning()
 
 
 

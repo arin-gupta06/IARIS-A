@@ -139,6 +139,9 @@ class IARISEngine:
             },
         }
 
+        # Runtime tuning defaults used by preview/apply/reset workflows.
+        self._default_tuning = self._capture_tuning_settings()
+
     @property
     def decisions(self) -> list[AllocationDecision]:
         """Recent allocation decisions."""
@@ -457,6 +460,225 @@ class IARISEngine:
         )
         return self._latest_intelligence
 
+    def _capture_tuning_settings(self) -> dict:
+        """Capture current tunable values from all optimization subsystems."""
+        churn_delta = self.optimizer.cache._delta
+        avg_cpu_mem_threshold = (churn_delta.cpu_delta_threshold + churn_delta.memory_delta_threshold) / 2.0
+        # Inverse mapping: lower thresholds => higher sensitivity.
+        churn_sensitivity = int(round(max(0.0, min(100.0, (5.0 - avg_cpu_mem_threshold) / 4.0 * 100.0))))
+
+        return {
+            "cold_start_threshold": float(self.cold_start.matcher.bootstrap_threshold),
+            "cache_ttl": int(self.optimizer.cache.default_ttl),
+            "ewma_alpha": float(self.config.ewma_alpha),
+            "process_churn_sensitivity": churn_sensitivity,
+        }
+
+    def _normalize_tuning_payload(self, payload: dict) -> tuple[dict, list[str], bool]:
+        """Normalize and clamp tuning payload to safe ranges."""
+        ranges = self.get_tuning_ranges()
+        normalized = {}
+        warnings: list[str] = []
+        clamped = False
+
+        def _clamp_number(name: str, value: float, min_v: float, max_v: float, digits: int = 3):
+            nonlocal clamped
+            safe_value = float(value)
+            if safe_value < min_v:
+                safe_value = min_v
+                warnings.append(f"{name} increased to safe minimum ({min_v}).")
+                clamped = True
+            if safe_value > max_v:
+                safe_value = max_v
+                warnings.append(f"{name} reduced to safe maximum ({max_v}).")
+                clamped = True
+            return round(safe_value, digits)
+
+        normalized["cold_start_threshold"] = _clamp_number(
+            "Cold Start Threshold",
+            payload.get("cold_start_threshold", self.cold_start.matcher.bootstrap_threshold),
+            ranges["cold_start_threshold"]["min"],
+            ranges["cold_start_threshold"]["max"],
+            2,
+        )
+
+        normalized["cache_ttl"] = int(_clamp_number(
+            "Cache TTL",
+            payload.get("cache_ttl", self.optimizer.cache.default_ttl),
+            ranges["cache_ttl"]["min"],
+            ranges["cache_ttl"]["max"],
+            0,
+        ))
+
+        normalized["ewma_alpha"] = _clamp_number(
+            "EWMA Alpha",
+            payload.get("ewma_alpha", self.config.ewma_alpha),
+            ranges["ewma_alpha"]["min"],
+            ranges["ewma_alpha"]["max"],
+            2,
+        )
+
+        normalized["process_churn_sensitivity"] = int(_clamp_number(
+            "Process Churn Sensitivity",
+            payload.get("process_churn_sensitivity", self._capture_tuning_settings()["process_churn_sensitivity"]),
+            ranges["process_churn_sensitivity"]["min"],
+            ranges["process_churn_sensitivity"]["max"],
+            0,
+        ))
+
+        return normalized, warnings, clamped
+
+    def get_tuning_ranges(self) -> dict:
+        """Supported safe ranges for tuning controls."""
+        return {
+            "cold_start_threshold": {"min": 0.35, "max": 0.9, "step": 0.01},
+            "cache_ttl": {"min": 5, "max": 120, "step": 1},
+            "ewma_alpha": {"min": 0.05, "max": 0.7, "step": 0.01},
+            "process_churn_sensitivity": {"min": 0, "max": 100, "step": 1},
+        }
+
+    def _compute_mode(self, settings: dict) -> str:
+        """Map settings to a user-facing mode badge."""
+        risk_score = 0
+        if settings["ewma_alpha"] >= 0.42:
+            risk_score += 2
+        if settings["cache_ttl"] <= 12:
+            risk_score += 2
+        if settings["cold_start_threshold"] <= 0.48:
+            risk_score += 2
+        if settings["process_churn_sensitivity"] >= 76:
+            risk_score += 1
+
+        if risk_score >= 5:
+            return "Aggressive Mode"
+        if risk_score >= 2:
+            return "Adaptive Mode"
+        return "Safe Mode"
+
+    def _predict_tuning_impact(self, settings: dict) -> dict:
+        """Predict impact of a tuning profile using current engine telemetry as baseline."""
+        current = self._capture_tuning_settings()
+        current_hit_rate = self.optimizer.cache.hit_rate if self.optimizer.cache.hit_rate > 0 else 0.78
+
+        ttl_diff = settings["cache_ttl"] - current["cache_ttl"]
+        alpha_diff = settings["ewma_alpha"] - current["ewma_alpha"]
+        cold_diff = settings["cold_start_threshold"] - current["cold_start_threshold"]
+        churn_diff = settings["process_churn_sensitivity"] - current["process_churn_sensitivity"]
+
+        hit_rate = (current_hit_rate * 100.0) + (ttl_diff * 0.45) - (churn_diff * 0.08)
+        hit_rate = max(35.0, min(99.0, hit_rate))
+
+        cpu_overhead = 11.0 - (hit_rate * 0.08) + (settings["ewma_alpha"] * 9.5) + (settings["process_churn_sensitivity"] * 0.02)
+        cpu_overhead = max(0.8, min(24.0, cpu_overhead))
+
+        convergence_time = 42.0 + ((0.34 - settings["ewma_alpha"]) * 120.0) + ((settings["cold_start_threshold"] - 0.6) * 55.0)
+        convergence_time = max(18.0, min(220.0, convergence_time))
+
+        cold_start_accuracy = 81.0 + (cold_diff * 26.0) - (max(0.0, settings["ewma_alpha"] - 0.45) * 12.0)
+        cold_start_accuracy = max(55.0, min(96.0, cold_start_accuracy))
+
+        risk_points = 0
+        if settings["ewma_alpha"] >= 0.45:
+            risk_points += 2
+        if settings["cache_ttl"] <= 10:
+            risk_points += 2
+        if settings["cold_start_threshold"] <= 0.45:
+            risk_points += 2
+        if settings["process_churn_sensitivity"] >= 80:
+            risk_points += 1
+        if cpu_overhead >= 12.0:
+            risk_points += 1
+
+        if risk_points >= 5:
+            verdict = "High Risk"
+            risk_color = "red"
+        elif risk_points >= 3:
+            verdict = "Moderate Risk"
+            risk_color = "yellow"
+        else:
+            verdict = "Healthy"
+            risk_color = "green"
+
+        return {
+            "hit_rate": round(hit_rate, 1),
+            "cpu_overhead": round(cpu_overhead, 1),
+            "convergence_time": round(convergence_time, 0),
+            "cold_start_accuracy": round(cold_start_accuracy, 1),
+            "risk": {
+                "score": risk_points,
+                "verdict": verdict,
+                "color": risk_color,
+            },
+            "delta": {
+                "hit_rate": round(hit_rate - (current_hit_rate * 100.0), 1),
+                "cpu_overhead": round(cpu_overhead - (11.0 - ((current_hit_rate * 100.0) * 0.08) + (current["ewma_alpha"] * 9.5) + (current["process_churn_sensitivity"] * 0.02)), 1),
+                "convergence_time": round(convergence_time - (42.0 + ((0.34 - current["ewma_alpha"]) * 120.0) + ((current["cold_start_threshold"] - 0.6) * 55.0)), 0),
+                "cold_start_accuracy": round(cold_start_accuracy - (81.0 + ((current["cold_start_threshold"] - 0.6) * 26.0) - (max(0.0, current["ewma_alpha"] - 0.45) * 12.0)), 1),
+            },
+        }
+
+    def get_tuning_state(self) -> dict:
+        """Get current tuning values, ranges, and predicted impact."""
+        settings = self._capture_tuning_settings()
+        prediction = self._predict_tuning_impact(settings)
+        return {
+            "current": settings,
+            "ranges": self.get_tuning_ranges(),
+            "mode": self._compute_mode(settings),
+            "prediction": prediction,
+        }
+
+    def preview_tuning(self, payload: dict) -> dict:
+        """Preview tuning impact without mutating live engine state."""
+        settings, warnings, clamped = self._normalize_tuning_payload(payload)
+        prediction = self._predict_tuning_impact(settings)
+        return {
+            "settings": settings,
+            "mode": self._compute_mode(settings),
+            "prediction": prediction,
+            "warnings": warnings,
+            "clamped": clamped,
+        }
+
+    def apply_tuning(self, payload: dict) -> dict:
+        """Apply validated tuning settings to runtime components."""
+        previous = self._capture_tuning_settings()
+        settings, warnings, clamped = self._normalize_tuning_payload(payload)
+
+        # Cold start resolver tuning.
+        self.cold_start.matcher.bootstrap_threshold = settings["cold_start_threshold"]
+
+        # Cache tuning.
+        self.optimizer.cache.default_ttl = settings["cache_ttl"]
+
+        # EWMA tuning across config and continuity layers.
+        self.config.ewma_alpha = settings["ewma_alpha"]
+        self.accelerator.continuity.metrics.ewma_alpha_steady = settings["ewma_alpha"]
+        self.accelerator.continuity.metrics.ewma_alpha_warmup = min(0.9, max(settings["ewma_alpha"] + 0.1, settings["ewma_alpha"] * 1.8))
+
+        # Churn sensitivity tuning maps to delta thresholds.
+        sensitivity = settings["process_churn_sensitivity"]
+        cpu_mem_threshold = max(0.8, 5.0 - (sensitivity * 0.04))
+        io_threshold = max(4.0, 20.0 - (sensitivity * 0.16))
+        self.optimizer.cache._delta.cpu_delta_threshold = cpu_mem_threshold
+        self.optimizer.cache._delta.memory_delta_threshold = cpu_mem_threshold
+        self.optimizer.cache._delta.io_delta_threshold = io_threshold
+
+        prediction = self._predict_tuning_impact(settings)
+
+        return {
+            "previous": previous,
+            "applied": settings,
+            "mode": self._compute_mode(settings),
+            "prediction": prediction,
+            "warnings": warnings,
+            "clamped": clamped,
+        }
+
+    def reset_tuning(self) -> dict:
+        """Reset runtime tuning to startup defaults."""
+        return self.apply_tuning(self._default_tuning)
+
     def get_state(self) -> dict:
         """Get complete engine state as a dictionary (for API/UI consumption)."""
         return {
@@ -510,4 +732,5 @@ class IARISEngine:
             # ── Observability + Intelligence layers ─────────────────────────
             "observability": self._latest_observability,
             "intelligence": self._latest_intelligence,
+            "tuning": self.get_tuning_state(),
         }

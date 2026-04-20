@@ -44,6 +44,7 @@ import {
   Legend
 } from 'recharts';
 import './index.css';
+import TuningPanel from './TuningPanel';
 
 const WS_URL = 'ws://127.0.0.1:8000/ws';
 const API_BASE = 'http://127.0.0.1:8000/api';
@@ -385,6 +386,7 @@ function App() {
   const tabConfig = [
     { id: 'VISUALIZATION', label: 'VISUALIZATION' },
     { id: 'RESULTS AND SIMULATION', label: 'RESULTS AND SIMULATION' },
+    { id: 'TUNING PANEL', label: 'TUNING PANEL' },
     { id: 'KEY INSIGHTS', label: 'KEY INSIGHTS' },
     { id: 'IMPACT ANALYSIS', label: 'IMPACT ANALISIS' },
     { id: 'KNOWLEDGE BASE', label: 'KNOWLEDGE BASE' },
@@ -441,6 +443,7 @@ function App() {
   const [snapshot, setSnapshot] = useState(null);
   const [activeScenario, setActiveScenario] = useState(null);
   const [lastDecisionCount, setLastDecisionCount] = useState(0);
+  const [tuningBridge, setTuningBridge] = useState(null);
 
   const prevMetricsRef = useRef(prevMetrics);
   const feedbackIdCounter = useRef(0);
@@ -756,6 +759,42 @@ function App() {
     setToastMessage(msg);
     setActiveProcessId(null);
     setTimeout(() => setToastMessage(null), 6000);
+  };
+
+  const handleTuningPreviewUpdate = (payload) => {
+    setTuningBridge({
+      ...payload,
+      at: Date.now(),
+    });
+  };
+
+  const handleTuningApplied = (payload) => {
+    setTuningBridge({
+      ...payload,
+      at: Date.now(),
+      source: 'applied',
+    });
+
+    pushFeedback(
+      'Tuning Profile Applied',
+      [
+        { icon: '🛠️', text: 'IARIS tuning profile updated safely' },
+        { icon: '📊', text: 'Simulator and impact metrics synchronized' },
+      ],
+      [
+        { text: 'Optimization Updated', type: 'positive' },
+        { text: payload?.mode || 'Adaptive Mode', type: 'neutral' },
+      ]
+    );
+
+    setToastMessage('Tuning changes applied. Watch Results and Simulation for impact trends.');
+    setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  const jumpToSimulatorFromTuning = () => {
+    setActiveTab('RESULTS AND SIMULATION');
+    setToastMessage('Switched to Results and Simulation with latest tuning preview.');
+    setTimeout(() => setToastMessage(null), 3200);
   };
 
   const sys = gameState.system || {};
@@ -1800,8 +1839,52 @@ function App() {
           )}
         </div>
       </div>
+
+      {tuningBridge?.prediction && (
+        <div className="glass-panel tuning-bridge-panel" style={{ marginTop: 16 }}>
+          <div className="panel-header">
+            <span><FlaskConical size={18} /> Tuning Preview Bridge</span>
+            <span className={`badge ${tuningBridge.mode === 'Aggressive Mode' ? 'badge-red' : tuningBridge.mode === 'Adaptive Mode' ? 'badge-yellow' : 'badge-green'}`}>
+              {tuningBridge.mode || 'Safe Mode'}
+            </span>
+          </div>
+          <div className="tuning-bridge-grid">
+            <div className="metric-card">
+              <span className="text-xs text-secondary font-bold uppercase">Hit Rate</span>
+              <span className="text-lg font-bold">{Number(tuningBridge.prediction.hit_rate || 0).toFixed(1)}%</span>
+              <span className="text-xs text-secondary">Delta: {Number(tuningBridge.prediction.delta?.hit_rate || 0) >= 0 ? '+' : ''}{Number(tuningBridge.prediction.delta?.hit_rate || 0).toFixed(1)}%</span>
+            </div>
+            <div className="metric-card">
+              <span className="text-xs text-secondary font-bold uppercase">CPU Overhead</span>
+              <span className="text-lg font-bold">{Number(tuningBridge.prediction.cpu_overhead || 0).toFixed(1)}%</span>
+              <span className="text-xs text-secondary">Delta: {Number(tuningBridge.prediction.delta?.cpu_overhead || 0) >= 0 ? '+' : ''}{Number(tuningBridge.prediction.delta?.cpu_overhead || 0).toFixed(1)}%</span>
+            </div>
+            <div className="metric-card">
+              <span className="text-xs text-secondary font-bold uppercase">Convergence Time</span>
+              <span className="text-lg font-bold">{Number(tuningBridge.prediction.convergence_time || 0).toFixed(0)}s</span>
+              <span className="text-xs text-secondary">Delta: {Number(tuningBridge.prediction.delta?.convergence_time || 0) >= 0 ? '+' : ''}{Number(tuningBridge.prediction.delta?.convergence_time || 0).toFixed(0)}s</span>
+            </div>
+            <div className="metric-card">
+              <span className="text-xs text-secondary font-bold uppercase">Risk Verdict</span>
+              <span className={`text-lg font-bold ${tuningBridge.prediction.risk?.color === 'red' ? 'text-red' : tuningBridge.prediction.risk?.color === 'yellow' ? 'text-secondary' : ''}`}>
+                {tuningBridge.prediction.risk?.verdict || 'Healthy'}
+              </span>
+              <span className="text-xs text-secondary">Score: {tuningBridge.prediction.risk?.score ?? 0}</span>
+            </div>
+          </div>
+        </div>
+      )}
           </div>
         </>
+      )}
+
+      {activeTab === 'TUNING PANEL' && (
+        <TuningPanel
+          apiBase={API_BASE}
+          onPreviewUpdate={handleTuningPreviewUpdate}
+          onApplied={handleTuningApplied}
+          onJumpToSimulator={jumpToSimulatorFromTuning}
+        />
       )}
 
       {activeTab === 'KEY INSIGHTS' && (
