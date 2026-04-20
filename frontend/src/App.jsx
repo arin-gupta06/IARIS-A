@@ -2,6 +2,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useWebSocket } from 'react-use-websocket/dist/lib/use-websocket';
 import { 
   Activity, 
+  Lightbulb,
+  Settings,
+  Bell,
+  SlidersHorizontal,
+  BarChart as BarChartIcon,
+  Search,
   Cpu, 
   HardDrive, 
   Server, 
@@ -384,12 +390,12 @@ function KnowledgePanel({ gameState, isIarisActive }) {
 
 function App() {
   const tabConfig = [
-    { id: 'VISUALIZATION', label: 'VISUALIZATION' },
-    { id: 'RESULTS AND SIMULATION', label: 'RESULTS AND SIMULATION' },
-    { id: 'TUNING PANEL', label: 'TUNING PANEL' },
-    { id: 'KEY INSIGHTS', label: 'KEY INSIGHTS' },
-    { id: 'IMPACT ANALYSIS', label: 'IMPACT ANALISIS' },
-    { id: 'KNOWLEDGE BASE', label: 'KNOWLEDGE BASE' },
+    { id: 'VISUALIZATION', label: 'Dashboard', icon: <ActivitySquare size={16} /> },
+    { id: 'IMPACT ANALYSIS', label: 'Analysis', icon: <BarChartIcon size={16} /> },
+    { id: 'KEY INSIGHTS', label: 'Insights', icon: <Lightbulb size={16} /> },
+    { id: 'KNOWLEDGE BASE', label: 'Knowledge Base', icon: <Server size={16} /> },
+    { id: 'TUNING PANEL', label: 'Control', icon: <SlidersHorizontal size={16} /> },
+    { id: 'RESULTS AND SIMULATION', label: 'Simulation', icon: <FlaskConical size={16} /> },
   ];
 
   const [gameState, setGameState] = useState({
@@ -1145,7 +1151,33 @@ function App() {
   const overloadedCount = trackedProcesses.filter((p) => p.avg_cpu >= 25).length;
 
   return (
-    <div className="dashboard-container">
+    <div className="app-layout">
+      {/* Sidebar */}
+      <aside className="sidebar">
+        <div className="sidebar-brand">
+          <div className="sidebar-brand-title">IARIS</div>
+          <div className="sidebar-brand-subtitle">SYSTEM ACTIVE</div>
+        </div>
+        <div className="sidebar-nav">
+          {tabConfig.map(tab => (
+            <button
+              key={tab.id}
+              className={`sidebar-nav-item ${activeTab === tab.id ? 'active' : ''}`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.icon} {tab.label}
+            </button>
+          ))}
+        </div>
+        <div className="sidebar-footer">
+          <button className="btn-optimize w-full" onClick={manualRefreshFromApi} disabled={isManualRefreshing} style={{width: '100%'}}>
+            {isManualRefreshing ? 'Refreshing...' : <>Optimize System</>}
+          </button>
+        </div>
+      </aside>
+
+      <div className="main-content-wrapper">
+        <div className="dashboard-container">
 
       {/* ═══════════════════════════════════════════════════════════════════
           FEEDBACK STACK (top-center overlay)
@@ -1220,30 +1252,6 @@ function App() {
           </label>
         </div>
       </header>
-      {/* TABS NAVIGATION */}
-      <div className="tabs-container" style={{ display: 'flex', gap: '8px', padding: '16px 0 8px 0', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: '16px' }}>
-        {tabConfig.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            style={{
-              padding: '8px 16px',
-              background: activeTab === tab.id ? 'var(--accent-primary)' : 'rgba(255,255,255,0.05)',
-              color: activeTab === tab.id ? '#fff' : 'var(--text-secondary)',
-              border: 'none',
-              borderRadius: '4px',
-              fontFamily: 'monospace',
-              fontSize: '12px',
-              fontWeight: 'bold',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
       {/* ═══════════════════════════════════════════════════════════════════
           BEFORE / AFTER SNAPSHOT (appears after action)
           ═══════════════════════════════════════════════════════════════════ */}
@@ -2306,6 +2314,8 @@ function App() {
         </>
       )}
 
+</div>
+      </div>
 </div>
   );
 }
