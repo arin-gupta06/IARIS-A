@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useWebSocket } from 'react-use-websocket/dist/lib/use-websocket';
 import { 
   Activity, 
+  Home,
+  Brain,
   Lightbulb,
   Settings,
   Bell,
@@ -390,7 +392,8 @@ function KnowledgePanel({ gameState, isIarisActive }) {
 
 function App() {
   const tabConfig = [
-    { id: 'VISUALIZATION', label: 'Dashboard', icon: <ActivitySquare size={16} /> },
+    { id: 'HOME', label: 'Home Page', icon: <Home size={16} /> },
+    { id: 'VISUALIZATION', label: 'Visualization', icon: <ActivitySquare size={16} /> },
     { id: 'IMPACT ANALYSIS', label: 'Analysis', icon: <BarChartIcon size={16} /> },
     { id: 'KEY INSIGHTS', label: 'Insights', icon: <Lightbulb size={16} /> },
     { id: 'KNOWLEDGE BASE', label: 'Knowledge Base', icon: <Server size={16} /> },
@@ -435,7 +438,7 @@ function App() {
   
   const [activeProcessId, setActiveProcessId] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
-  const [activeTab, setActiveTab] = useState('VISUALIZATION');
+  const [activeTab, setActiveTab] = useState('HOME');
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -1211,6 +1214,7 @@ function App() {
       )}
 
       {/* HEADER WITH IARIS TOGGLE AND ACTION BANNER */}
+      {activeTab !== 'HOME' && (
       <header className="top-header-grid">
         {latestDecision && isIarisActive ? (
           <div className="action-banner">
@@ -1218,10 +1222,13 @@ function App() {
               <Zap size={20} color="var(--accent-primary)"/> 
               ACTION: {latestDecision.action.toUpperCase()} {latestDecision.process_name}
             </div>
-            <div className="action-banner-desc">
-              <span><strong>Target:</strong> {latestDecision.process_name}</span>
-              <span><strong>Reason:</strong> {latestDecision.reason}</span>
-              <span><strong>Status:</strong> Engine Active ({gameState.tick_count} updates)</span>
+            <div className="action-banner-desc" style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 16px', alignItems: 'start' }}>
+              <strong style={{ color: 'var(--text-primary)' }}>Target:</strong>
+              <span style={{ wordBreak: 'break-all' }}>{latestDecision.process_name}</span>
+              <strong style={{ color: 'var(--text-primary)' }}>Reason:</strong>
+              <span>{latestDecision.reason}</span>
+              <strong style={{ color: 'var(--text-primary)' }}>Status:</strong>
+              <span>Engine Active ({gameState.tick_count} updates)</span>
             </div>
           </div>
         ) : (
@@ -1230,18 +1237,14 @@ function App() {
               <Shield size={20} /> 
               {isIarisActive ? "SYSTEM STABLE: Monitoring intent" : "SYSTEM DEGRADED: Standard CFQ Scheduler Active"}
             </div>
-            <div className="action-banner-desc">
-              <span>{isIarisActive ? "Awaiting system pressure or new behaviors..." : "IARIS Intent-Orchestrator has been bypassed."}</span>
+            <div className="action-banner-desc" style={{ display: 'flex', gap: '12px' }}>
+              <span style={{ lineHeight: '1.5' }}>{isIarisActive ? "Awaiting system pressure or new behaviors..." : "IARIS Intent-Orchestrator has been bypassed."}</span>
             </div>
           </div>
         )}
 
         <div className="toggle-panel">
           <span className="font-bold text-sm">IARIS ORCHESTRATOR</span>
-          <button className="btn" onClick={manualRefreshFromApi} disabled={isManualRefreshing} style={{ marginBottom: 8 }}>
-            <RefreshCw size={14} className={isManualRefreshing ? 'animate-spin' : ''} />
-            {isManualRefreshing ? 'Refreshing...' : 'Refresh API'}
-          </button>
           <label className="switch">
             <input 
               type="checkbox" 
@@ -1252,6 +1255,7 @@ function App() {
           </label>
         </div>
       </header>
+      )}
       {/* ═══════════════════════════════════════════════════════════════════
           BEFORE / AFTER SNAPSHOT (appears after action)
           ═══════════════════════════════════════════════════════════════════ */}
@@ -1274,6 +1278,139 @@ function App() {
                 <span style={{ color: 'var(--accent-primary)', fontWeight: 700 }}> {v}</span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'HOME' && (
+        <div className="home-layout" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          
+          {/* Header & Status Row */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '20px', alignItems: 'center', marginBottom: '8px' }}>
+            <div className="home-header" style={{ textAlign: 'left' }}>
+              <h1 style={{ fontSize: '2.5em', fontWeight: 'bold', margin: '0 0 4px 0', color: 'var(--text-primary)', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                IARIS <Brain size={32} style={{ color: 'var(--accent-primary)' }} />
+              </h1>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '1.2em', margin: 0, fontWeight: 300 }}>"Your system, but smarter"</p>
+            </div>
+            <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px 24px', borderRadius: '12px', minWidth: '250px' }}>
+              <span style={{ fontWeight: 600, fontSize: '1.05em', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)' }}>
+                <Activity size={16} color={isIarisActive ? 'var(--color-green)' : 'var(--color-yellow)'} /> System Status
+              </span>
+              <span className={`badge ${isIarisActive ? 'badge-good' : 'badge-warn'}`} style={{ padding: '8px 12px', fontSize: '1em', display: 'flex', justifyContent: 'center' }}>
+                {isIarisActive ? '🟢 Orchestrator Active' : '🟡 Standard Mode'}
+              </span>
+            </div>
+          </div>
+
+          {/* Metrics Row */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+            <div className="glass-panel" style={{ padding: '20px 16px', textAlign: 'center', borderRadius: '12px', display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <Zap size={24} color="var(--accent-primary)" style={{ margin: '0 auto 12px' }} />
+              <div style={{ fontSize: '1.4em', fontWeight: 'bold' }}>{cpuAdvantage > 0 ? `${formatPercent(cpuAdvantage)} Saved` : 'Tracking'}</div>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '0.9em', marginTop: 'auto', paddingTop: '4px' }}>⚡ CPU Efficiency</div>
+            </div>
+            <div className="glass-panel" style={{ padding: '20px 16px', textAlign: 'center', borderRadius: '12px', display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <HardDrive size={24} color="var(--color-blue)" style={{ margin: '0 auto 12px' }} />
+              <div style={{ fontSize: '1.4em', fontWeight: 'bold' }}>{gameState.intelligence?.used_cache ? 'Hit' : 'Wait'}</div>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '0.9em', marginTop: 'auto', paddingTop: '4px' }}>💾 KB Cache</div>
+            </div>
+            <div className="glass-panel" style={{ padding: '20px 16px', textAlign: 'center', borderRadius: '12px', display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <Brain size={24} color="var(--color-purple)" style={{ margin: '0 auto 12px' }} />
+              <div style={{ fontSize: '1.4em', fontWeight: 'bold' }}>{gameState.tick_count > 0 ? 'Active' : 'Warming'}</div>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '0.9em', marginTop: 'auto', paddingTop: '4px' }}>🧠 Learning</div>
+            </div>
+            <div className="glass-panel" style={{ padding: '20px 16px', textAlign: 'center', borderRadius: '12px', display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <ArrowUpToLine size={24} color="var(--color-green)" style={{ margin: '0 auto 12px' }} />
+              <div style={{ fontSize: '1.4em', fontWeight: 'bold' }}>{latestDecision?.action === 'boost' ? 'Boosting' : 'Ready'}</div>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '0.9em', marginTop: 'auto', paddingTop: '4px' }}>🚀 Boost State</div>
+            </div>
+          </div>
+
+          {/* Bottom Grid: 2 columns */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '20px', alignItems: 'stretch' }}>
+            
+            {/* Left Column */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div className="glass-panel" style={{ padding: '24px', borderRadius: '12px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                <h3 style={{ margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1em', fontWeight: 600 }}>
+                  <RefreshCw size={18} color="var(--text-secondary)" /> What IARIS is doing right now
+                </h3>
+                <div style={{ background: 'rgba(0,0,0,0.2)', padding: '20px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', flex: 1 }}>
+                  {latestDecision ? (
+                    <div style={{ lineHeight: '1.6', fontSize: '1.05em' }}>
+                      <span style={{ color: 'var(--accent-primary)', fontWeight: 'bold', marginRight: 8 }}>{latestDecision.action.toUpperCase()}:</span> 
+                      <span style={{ fontWeight: 500, marginRight: 8, color: 'var(--text-primary)' }}>{latestDecision.process_name}</span>
+                      <span style={{ color: 'var(--text-secondary)' }}>— {latestDecision.reason}</span>
+                    </div>
+                  ) : (
+                    <div style={{ color: 'var(--text-secondary)' }}>Monitoring system pressure... Awaiting thresholds to enact policies.</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="glass-panel" style={{ padding: '24px', borderRadius: '12px', display: 'flex', flexDirection: 'column', height: '220px' }}>
+                <h3 style={{ margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1em', fontWeight: 600 }}>
+                  <Activity size={18} color="var(--color-blue)" /> CPU Baseline
+                </h3>
+                <div style={{ flex: 1, minHeight: 0 }}>
+                  {history && history.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={history} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorHomeCpu" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="var(--accent-primary)" stopOpacity={0.4}/>
+                            <stop offset="95%" stopColor="var(--accent-primary)" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <Area type="monotone" dataKey="cpu" stroke="var(--accent-primary)" strokeWidth={2} fillOpacity={1} fill="url(#colorHomeCpu)" isAnimationActive={false} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>Waiting for telemetry...</div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div className="glass-panel" style={{ padding: '24px', borderRadius: '12px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                <h3 style={{ margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1em', fontWeight: 600 }}>
+                  <Lightbulb size={18} color="var(--color-yellow)" /> Smart Insight
+                </h3>
+                <div style={{ background: 'rgba(0,0,0,0.2)', padding: '20px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', flex: 1 }}>
+                  {recommendationForSummary ? (
+                    <div style={{ lineHeight: '1.6', color: 'var(--text-primary)', fontSize: '1.05em' }}>{recommendationForSummary.recommendation}</div>
+                  ) : (
+                    <div style={{ color: 'var(--text-secondary)' }}>Insufficient behavioral aggregation... Waiting until stable base is established.</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="glass-panel" style={{ padding: '24px', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
+                <h3 style={{ margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1em', fontWeight: 600 }}>
+                  <Settings size={18} color="var(--text-secondary)" /> Quick Actions
+                </h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', flex: 1, justifyContent: 'flex-end' }}>
+                  <button className="btn" onClick={manualRefreshFromApi} disabled={isManualRefreshing} style={{ justifyContent: 'center', padding: '14px', width: '100%', fontSize: '1em' }}>
+                    <RefreshCw size={18} className={isManualRefreshing ? 'animate-spin' : ''} /> Force Re-Evaluation
+                  </button>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <span style={{ fontWeight: 500, fontSize: '1.05em' }}>Mode Toggle</span>
+                    <label className="switch">
+                      <input 
+                        type="checkbox" 
+                        checked={isIarisActive} 
+                        onChange={() => setIsIarisActive(!isIarisActive)} 
+                      />
+                      <span className="slider"></span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
           </div>
         </div>
       )}
